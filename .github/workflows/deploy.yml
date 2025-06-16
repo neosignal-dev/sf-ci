@@ -22,38 +22,37 @@ jobs:
         run: |
           scp -i key.pem -o StrictHostKeyChecking=no index.html Dockerfile ${{ secrets.VM_USER }}@${{ secrets.VM_IP }}:/home/${{ secrets.VM_USER }}/
 
-      - name: Remote deploy and test
+      - name: Remote deploy and test (DEBUG)
         run: |
           ssh -i key.pem -o StrictHostKeyChecking=no ${{ secrets.VM_USER }}@${{ secrets.VM_IP }} <<'EOF'
+            set -x  # Включить вывод всех команд
+
             cd /home/${{ secrets.VM_USER }}
-            
-            echo "🛠️ Сборка Docker-образа..."
+
+            echo "🛠 Сборка образа"
             docker build -t test-nginx .
 
-            echo "🧹 Удаление предыдущего контейнера (если есть)..."
+            echo "🧹 Удаление старого контейнера (если есть)"
             docker rm -f test-nginx || true
 
-            echo "🚀 Запуск контейнера..."
-            docker run -d -p 9889:80 --name test-nginx test-nginx || { echo "❌ Не удалось запустить контейнер"; exit 1; }
+            echo "🚀 Запуск контейнера"
+            docker run -d -p 9889:80 --name test-nginx test-nginx || { echo "❌ Ошибка запуска"; docker logs test-nginx || true; exit 1; }
 
-            echo "⏳ Ожидание старта..."
+            echo "⏳ Ожидание запуска"
             sleep 10
 
-            echo "📥 Проверка HTTP-доступности..."
-            curl -s -o downloaded.html -w "%{http_code}" http://localhost:9889 > http_code.txt
-            code=$(tail -n1 http_code.txt)
+            echo "📦 Проверка контейнеров:"
+            docker ps -a
 
-            if [[ "$code" != "200" ]]; then
-              echo "❌ Ошибка: код ответа $code"
-              exit 1
-            fi
+            echo "📥 curl-запрос к nginx"
+            curl -v http://localhost:9889 || { echo "❌ curl неудачен"; exit 1; }
 
-            echo "🔍 Сравнение md5-сумм..."
+            echo "🔍 Сравнение md5"
             md5sum index.html | cut -d' ' -f1 > original.md5
+            curl -s http://localhost:9889 > downloaded.html
             md5sum downloaded.html | cut -d' ' -f1 > downloaded.md5
-
             diff original.md5 downloaded.md5 || { echo "❌ MD5 не совпадают"; exit 1; }
 
-            echo "✅ Всё успешно. Удаление контейнера..."
+            echo "✅ Успешно. Удаляем контейнер"
             docker rm -f test-nginx
           EOF

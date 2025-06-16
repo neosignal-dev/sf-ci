@@ -1,0 +1,40 @@
+name: CI nginx test
+
+on:
+  push:
+    paths:
+      - index.html
+
+jobs:
+  deploy-and-check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v3
+
+      - name: Save SSH key
+        run: |
+          echo "${{ secrets.SSH_KEY }}" > key.pem
+          chmod 600 key.pem
+
+      - name: Copy files to VM
+        run: |
+          scp -i key.pem -o StrictHostKeyChecking=no index.html Dockerfile ${{ secrets.VM_USER }}@${{ secrets.VM_IP }}:/home/${{ secrets.VM_USER }}/
+
+      - name: Remote deploy and test
+        run: |
+          ssh -i key.pem -o StrictHostKeyChecking=no ${{ secrets.VM_USER }}@${{ secrets.VM_IP }} <<'EOF'
+            cd /home/${{ secrets.VM_USER }}
+            docker build -t test-nginx .
+            docker rm -f test-nginx || true
+            docker run -d -p 9889:80 --name test-nginx test-nginx
+            sleep 5
+            curl -s -o downloaded.html -w "%{http_code}" http://localhost:9889 > http_code.txt
+            code=$(tail -n1 http_code.txt)
+            [[ "$code" == "200" ]] || { echo "HTTP error code $code"; exit 1; }
+            md5sum index.html | cut -d' ' -f1 > original.md5
+            md5sum downloaded.html | cut -d' ' -f1 > downloaded.md5
+            diff original.md5 downloaded.md5 || { echo "MD5 mismatch"; exit 1; }
+            docker rm -f test-nginx
+          EOF

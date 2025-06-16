@@ -53,6 +53,6 @@ jobs:
             md5sum downloaded.html | cut -d' ' -f1 > downloaded.md5
             diff original.md5 downloaded.md5 || { echo "❌ MD5 не совпадают"; exit 1; }
 
-            echo "✅ Успешно. Удаляем контейнер"
-            docker rm -f test-nginx
+            # echo "✅ Успешно. Удаляем контейнер"
+            # docker rm -f test-nginx
           EOF
